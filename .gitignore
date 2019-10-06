@@ -196,3 +196,5 @@ zeromq-*.zip
 core
 build
 test-suite.log
+cmake-build-debug/
+.idea
