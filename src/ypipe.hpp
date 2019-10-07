@@ -50,11 +50,14 @@ template <typename T, int N> class ypipe_t : public ypipe_base_t<T>
     inline ypipe_t ()
     {
         //  Insert terminator element into the queue.
+        // 构造时，队列里添加一个空元素，作为终止标记。
         _queue.push ();
 
         //  Let all the pointers to point to the terminator.
         //  (unless pipe is dead, in which case c is set to NULL).
+        // 相关标记设置为终止标记
         _r = _w = _f = &_queue.back ();
+        // 最新的flushed元素，也是终止标记
         _c.set (&_queue.back ());
     }
 
@@ -78,11 +81,14 @@ template <typename T, int N> class ypipe_t : public ypipe_base_t<T>
     inline void write (const T &value_, bool incomplete_)
     {
         //  Place the value to the queue, add new terminator element.
+        //  队列中最后一个元素设置为 value_
         _queue.back () = value_;
+        //  push 新的元素，即 结束元素
         _queue.push ();
 
-        //  Move the "flush up to here" poiter.
+        //  Move the "flush up to here" poiter. 
         if (!incomplete_)
+        // 如果未完成，则 _f 标记设置为 结束元素
             _f = &_queue.back ();
     }
 
@@ -96,10 +102,19 @@ template <typename T, int N> class ypipe_t : public ypipe_base_t<T>
     {
         if (_f == &_queue.back ())
             return false;
+        
+        // 去掉 最后一个结束元素
         _queue.unpush ();
+        // 再获取倒数第二个元素
         *value_ = _queue.back ();
         return true;
     }
+
+    //_w:变化的时机：flush 时，将 _w 设置为与 _f 一致。初始情况下，_w = _f，如果插入的元素标记为已完成，则 _f 不变，_w = _f；
+    //   否则 _f 会更新后新插入元素的尾部，使得 _w != _f
+    //_f:变化的时机：插入元素，且未完成时(incomplete)。指向未完成的插入元素的后一个元素
+    //_c:变化的时机：flush操作时，cas 操作，将其设置为 _f；check_read 操作，将其设置为 NULL。初始值与 _f/_w 相等
+    //_r:变化的时机：check_read ，设置为 queue.front()。初始值与 _f/_w 相等
 
     //  Flush all the completed items into the pipe. Returns false if
     //  the reader thread is sleeping. In that case, caller is obliged to
@@ -107,10 +122,13 @@ template <typename T, int N> class ypipe_t : public ypipe_base_t<T>
     inline bool flush ()
     {
         //  If there are no un-flushed items, do nothing.
+        //  flush 操作，检查 un-flushed 是否与 flushed item 相等，相等则说明没有 un-flushed 的元素，无需 flush
         if (_w == _f)
             return true;
 
-        //  Try to set 'c' to 'f'.
+        //  Try to set 'c' to 'f'. 
+        //  说明有 un-flushed 的 元素
+        //  _c(last flushed) cas 操作，如果是 _w，则修改为 _f，
         if (_c.cas (_w, _f) != _w) {
             //  Compare-and-swap was unseccessful because 'c' is NULL.
             //  This means that the reader is asleep. Therefore we don't
@@ -124,7 +142,7 @@ template <typename T, int N> class ypipe_t : public ypipe_base_t<T>
 
         //  Reader is alive. Nothing special to do now. Just move
         //  the 'first un-flushed item' pointer to 'f'.
-        _w = _f;
+        _w = _f; //将 un-flushed 修改为 _f
         return true;
     }
 
@@ -132,6 +150,7 @@ template <typename T, int N> class ypipe_t : public ypipe_base_t<T>
     inline bool check_read ()
     {
         //  Was the value prefetched already? If so, return.
+        //  队列头部不是 未预读取 的，且未预读取的非空
         if (&_queue.front () != _r && _r)
             return true;
 
@@ -139,6 +158,9 @@ template <typename T, int N> class ypipe_t : public ypipe_base_t<T>
         //  Prefetching is to simply retrieve the
         //  pointer from c in atomic fashion. If there are no
         //  items to prefetch, set c to NULL (using compare-and-swap).
+
+        // 未预读取的，设置为 队列头部。
+        // 上次 flushed 的 item,设置为 NULL
         _r = _c.cas (&_queue.front (), NULL);
 
         //  If there are no elements prefetched, exit.
@@ -162,7 +184,11 @@ template <typename T, int N> class ypipe_t : public ypipe_base_t<T>
 
         //  There was at least one value prefetched.
         //  Return it to the caller.
+
+        //  从队列头部读取元素
         *value_ = _queue.front ();
+
+        //读取后，弹出头部元素
         _queue.pop ();
         return true;
     }
@@ -187,20 +213,20 @@ template <typename T, int N> class ypipe_t : public ypipe_base_t<T>
 
     //  Points to the first un-flushed item. This variable is used
     //  exclusively by writer thread.
-    T *_w;
+    T *_w; // 第一个 un-flushed 的元素
 
     //  Points to the first un-prefetched item. This variable is used
     //  exclusively by reader thread.
-    T *_r;
+    T *_r; // 第一个 un-prefetched 的元素
 
     //  Points to the first item to be flushed in the future.
-    T *_f;
+    T *_f; // 第一个将被 flushed 的元素
 
     //  The single point of contention between writer and reader thread.
     //  Points past the last flushed item. If it is NULL,
     //  reader is asleep. This pointer should be always accessed using
     //  atomic operations.
-    atomic_ptr_t<T> _c;
+    atomic_ptr_t<T> _c; // 读线程和写线程竞争的资源。指向最新的flushed的元素，若为NULL，reader 线程 asleep。
 
     //  Disable copying of ypipe object.
     ypipe_t (const ypipe_t &);

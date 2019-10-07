@@ -203,3 +203,4 @@ build
 test-suite.log
 cmake-build-debug/
 .idea
+.vscode/

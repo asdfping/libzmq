@@ -437,6 +437,7 @@ bool zmq::ctx_t::start ()
     }
 
     //  In the unused part of the slot array, create a list of empty slots.
+    // 循环次数 = mazmq ，即使最大 socket 的数量，在 empty_slots 中创建 mazmq 数量个槽位，id = _slots 数组的下标。
     for (int32_t i = static_cast<int32_t> (_slots.size ()) - 1;
          i >= static_cast<int32_t> (ios) + term_and_reaper_threads_count; i--) {
         _empty_slots.push_back (i);
@@ -477,6 +478,7 @@ zmq::socket_base_t *zmq::ctx_t::create_socket (int type_)
     }
 
     //  Choose a slot for the socket.
+    // 从empty_slot的尾部获取一个id，并减小empty_slots的大小，当 empty_slot为空时，说明达到了socket的上限。
     uint32_t slot = _empty_slots.back ();
     _empty_slots.pop_back ();
 

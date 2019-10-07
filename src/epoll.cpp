@@ -28,6 +28,7 @@
 */
 
 #include "precompiled.hpp"
+#define ZMQ_IOTHREAD_POLLER_USE_EPOLL
 #if defined ZMQ_IOTHREAD_POLLER_USE_EPOLL
 #include "epoll.hpp"
 
